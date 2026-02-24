@@ -2,55 +2,94 @@ name: Build ZMK Firmware for BlackBerry P9981
 
 on:
   push:
-    branches: [ main ]  # 提交代码时自动编译
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:  # 手动触发编译
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # 用云端 Ubuntu 编译，稳定
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout ZMK
+      # 步骤1：安装系统基础依赖
+      - name: Install System Dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y git ninja-build gperf ccache dfu-util device-tree-compiler wget
+          sudo apt install -y python3 python3-pip python3-venv python3-dev libffi-dev libssl-dev
+          # 验证 Python 环境
+          python3 --version
+          pip3 --version
+
+      # 步骤2：独立安装 west（核心！单独步骤，便于排查）
+      - name: Install ZMK West Tool
+        run: |
+          # 升级 pip 避免安装报错
+          pip3 install --upgrade pip
+          # 安装固定版本 west（兼容 ZMK v0.3.0）
+          pip3 install --user west==1.0.0
+          # 强制添加 west 到全局 PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # 验证 west 安装（输出版本即成功）
+          west --version
+
+      # 步骤3：拉取 ZMK v0.3.0 源码
+      - name: Checkout ZMK Source Code
         uses: actions/checkout@v4
         with:
           repository: zmkfirmware/zmk
-          ref: v0.3.0  # 对应 ZMK v0.3.0 版本
+          ref: v0.3.0
           path: zmk
           submodules: recursive
 
+      # 步骤4：拉取你的黑莓配置文件
       - name: Checkout User Config
         uses: actions/checkout@v4
         with:
-          path: zmk/config
-          # 把当前仓库的配置覆盖到 ZMK 的 config 目录
+          path: zmk/config  # 配置文件放到 ZMK 的 config 目录
 
+      # 步骤5：West 初始化（单独步骤，清晰）
       - name: West Init
         run: |
           cd zmk
           west init -l app/
-          west update
+          # 验证 west 工作区
+          west list
+
+      # 步骤6：下载 Zephyr 等依赖（增加重试，避免网络超时）
+      - name: West Update Dependencies
+        run: |
+          cd zmk
+          west update --timeout 600 || west update --timeout 600
+
+      # 步骤7：导出 Zephyr 路径
+      - name: West Zephyr Export
+        run: |
+          cd zmk
           west zephyr-export
 
-      - name: Build Nice!Nano v2 Firmware
+      # 步骤8：编译 Nice!Nano v2 固件
+      - name: Build Firmware
         run: |
           cd zmk
           west build -s app -b nice_nano_v2 -- -DZMK_CONFIG=config
 
+      # 步骤9：上传 UF2 固件（编译产物）
       - name: Upload UF2 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nice_nano_v2-zmk-firmware
-          path: zmk/build/zephyr/zmk.uf2  # 编译出的 UF2 固件路径
-          
+          name: blackberry-p9981-uf2-firmware
+          path: zmk/build/zephyr/zmk.uf2
+
+      # 可选：自动发布固件到 Release 页面
       - name: Release Firmware
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           files: zmk/build/zephyr/zmk.uf2
-          tag_name: firmware-${{ github.run_number }}
-          name: Firmware Build ${{ github.run_number }}
-          body: Auto-built ZMK firmware for BlackBerry P9981 (Nice!Nano v2)
+          tag_name: v${{ github.run_number }}
+          name: BlackBerry P9981 Firmware v${{ github.run_number }}
+          body: Auto-built ZMK UF2 firmware for Nice!Nano v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
