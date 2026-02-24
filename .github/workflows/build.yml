@@ -12,22 +12,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 步骤1：安装系统依赖
-      - name: Install System Dependencies
+      # 步骤1：安装系统依赖 + Zephyr SDK 0.16（核心新增！）
+      - name: Install System Dependencies & Zephyr SDK 0.16
         run: |
+          # 安装基础依赖
           sudo apt update -y
-          sudo apt install -y git ninja-build gperf ccache dfu-util device-tree-compiler wget
-          sudo apt install -y python3 python3-pip python3-venv python3-dev libffi-dev libssl-dev
-          python3 --version
-          pip3 --version
+          sudo apt install -y git ninja-build gperf ccache dfu-util device-tree-compiler wget \
+            python3 python3-pip python3-venv python3-dev libffi-dev libssl-dev \
+            curl unzip tar bzip2
 
-      # 步骤2：安装 west 1.0.0（严格锁定版本）
+          # 下载并安装 Zephyr SDK 0.16.1（ZMK v0.3.0 适配版本）
+          wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.1/zephyr-sdk-0.16.1-linux-x86_64.tar.xz
+          sudo mkdir -p /opt/zephyr-sdk
+          sudo tar xvf zephyr-sdk-0.16.1-linux-x86_64.tar.xz -C /opt/zephyr-sdk --strip-components=1
+          sudo /opt/zephyr-sdk/setup.sh
+
+          # 配置 SDK 环境变量（关键！让 CMake 找到 SDK）
+          echo "ZEPHYR_SDK_INSTALL_DIR=/opt/zephyr-sdk" >> $GITHUB_ENV
+          echo "PATH=/opt/zephyr-sdk/bin:$PATH" >> $GITHUB_PATH
+
+          # 验证 SDK 安装
+          /opt/zephyr-sdk/bin/arm-zephyr-eabi-gcc --version
+
+      # 步骤2：安装 west 1.0.0
       - name: Install ZMK West Tool (v1.0.0)
         run: |
           pip3 install --upgrade pip
           pip3 install --user west==1.0.0
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          west --version  # 必须输出 1.0.0
+          west --version
 
       # 步骤3：拉取 ZMK v0.3.0 源码
       - name: Checkout ZMK Source Code
@@ -38,27 +51,23 @@ jobs:
           path: zmk
           submodules: recursive
 
-      # 步骤4：拉取用户配置
-      - name: Checkout User Config
+      # 步骤4：拉取用户配置（修正路径：放到 zmk/app/config）
+      - name: Checkout User Config (Fix Path)
         uses: actions/checkout@v4
         with:
-          path: zmk/config
+          path: zmk/app/config  # 关键！配置文件放到 app 目录下，匹配 ZMK 编译逻辑
 
-      # 步骤5：West 初始化（纯原生，无任何多余参数）
+      # 步骤5：West 初始化
       - name: West Init (v1.0.0 Pure)
         run: |
           cd zmk
           west init -l app/
           rm -rf .west/manifest-cache || true
 
-      # 步骤6：West Update（核心修复：-o 参数格式 + 移除多余选项）
-      - name: West Update Dependencies (Final Fix)
+      # 步骤6：West Update 依赖
+      - name: West Update Dependencies
         run: |
           cd zmk
-          # 完全适配 west 1.0.0：
-          # 1. -o 参数无引号，单独传参
-          # 2. 仅保留 -n（--narrow），移除 --depth=1（避免格式冲突）
-          # 3. 重试逻辑保留，解决网络问题
           west update -n || west update -n
 
       # 步骤7：West Zephyr Export
@@ -67,11 +76,14 @@ jobs:
           cd zmk
           west zephyr-export
 
-      # 步骤8：编译固件（无任何参数问题）
+      # 步骤8：编译固件（指定 SDK 路径 + 修正配置路径）
       - name: Build Nice!Nano v2 Firmware
         run: |
           cd zmk
-          west build -s app -b nice_nano_v2 -- -DZMK_CONFIG=config
+          west build -s app -b nice_nano_v2 \
+            -- -DZMK_CONFIG=app/config \
+            -DZEPHYR_SDK_INSTALL_DIR=/opt/zephyr-sdk \
+            -DZMK_KEYMAP=nice_nano_v2  # 明确指定 keymap 文件名
 
       # 步骤9：上传 UF2 固件
       - name: Upload UF2 Artifact
@@ -88,6 +100,6 @@ jobs:
           files: zmk/build/zephyr/zmk.uf2
           tag_name: v${{ github.run_number }}
           name: BlackBerry P9981 Firmware v${{ github.run_number }}
-          body: Final version - ZMK UF2 firmware for Nice!Nano v2 (west 1.0.0 zero error)
+          body: Final version - ZMK UF2 firmware for Nice!Nano v2 (with Zephyr SDK 0.16)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
