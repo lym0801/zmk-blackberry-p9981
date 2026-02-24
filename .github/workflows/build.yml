@@ -21,15 +21,15 @@ jobs:
           python3 --version
           pip3 --version
 
-      # 步骤2：安装 west 工具
-      - name: Install ZMK West Tool
+      # 步骤2：安装 west 1.0.0（固定低版本，避免兼容问题）
+      - name: Install ZMK West Tool (v1.0.0)
         run: |
           pip3 install --upgrade pip
-          pip3 install --user west==1.0.0
+          pip3 install --user west==1.0.0  # 严格匹配 ZMK v0.3.0 兼容版本
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          west --version
+          west --version  # 验证版本：输出 1.0.0
 
-      # 步骤3：拉取 ZMK v0.3.0 源码（关键：先拉源码，不验证 manifest）
+      # 步骤3：拉取 ZMK v0.3.0 源码
       - name: Checkout ZMK Source Code
         uses: actions/checkout@v4
         with:
@@ -44,27 +44,29 @@ jobs:
         with:
           path: zmk/config
 
-      # 步骤5：West 初始化（核心：去掉 manifest 验证，只初始化工作区）
-      - name: West Init (No Manifest Check)
+      # 步骤5：West 初始化（低版本兼容，无多余参数）
+      - name: West Init (v1.0.0 Compatible)
         run: |
           cd zmk
-          # 仅初始化工作区，不验证 manifest（避免提前报错）
-          west init --no-update -l app/
+          # 仅基础初始化，west 1.0.0 原生支持的命令
+          west init -l app/
+          # 强制删除 manifest 缓存，避免导入报错
+          rm -rf .west/manifest-cache || true
 
-      # 步骤6：West Update（先克隆所有依赖，再处理 manifest）
-      - name: West Update Dependencies (Critical!)
+      # 步骤6：West Update（核心！先克隆依赖，再处理 manifest）
+      - name: West Update Dependencies (Critical for v1.0.0)
         run: |
           cd zmk
-          # 增加重试和超时，解决网络克隆失败
-          west update --timeout 900 --fetch-opt --depth=1 || west update --timeout 900
+          # 低版本 west 需增加 --narrow 避免递归克隆报错
+          west update --narrow --timeout 900 || west update --narrow --timeout 900
 
-      # 步骤7：West Zephyr Export（依赖克隆完成后再导出）
+      # 步骤7：West Zephyr Export（依赖就绪后导出）
       - name: West Zephyr Export
         run: |
           cd zmk
           west zephyr-export
 
-      # 步骤8：编译固件（依赖就绪，编译不会报错）
+      # 步骤8：编译固件（低版本 west 兼容）
       - name: Build Nice!Nano v2 Firmware
         run: |
           cd zmk
@@ -85,6 +87,6 @@ jobs:
           files: zmk/build/zephyr/zmk.uf2
           tag_name: v${{ github.run_number }}
           name: BlackBerry P9981 Firmware v${{ github.run_number }}
-          body: Auto-built ZMK UF2 firmware for Nice!Nano v2
+          body: Auto-built ZMK UF2 firmware for Nice!Nano v2 (west 1.0.0 compatible)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
