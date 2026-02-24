@@ -1,0 +1,178 @@
+/*
+ * 黑莓 P9981 键盘 ZMK 最终适配版
+ * 默认层：层0 | 层1：符号/数字 | 层2：功能/背光
+ * 专属功能：
+ * 1. 右下角aA键 + 双击空格 = 清除蓝牙配对
+ * 2. 长按右下角aA键 + 美元键($) = 弹出U盘
+ * 适配 Nice!Nano v2，即刷即用
+ */
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/bt.h>
+#include <dt-bindings/zmk/hid_usage.h>
+#include <dt-bindings/zmk/hid_usage_pages.h>
+#include <dt-bindings/zmk/ext_power.h>
+#include <dt-bindings/zmk/led.h>
+
+/ {
+    keymap {
+        compatible = "zmk,keymap";
+
+        // 默认层：层0（基础打字）
+        default_layer {
+            bindings = <
+                &kp Q    &kp W    &kp E    &kp R    &kp T    &kp Y    &kp U    &kp I    &kp O    &kp P
+                &kp A    &kp S    &kp D    &kp F    &kp G    &kp H    &kp J    &kp K    &kp L    &kp RETURN
+                &kp LSHFT&kp Z    &kp X    &kp C    &kp V    &kp B    &kp N    &kp M    &TD_SEMI_L1 &kp ENTER
+                &STICKY_CTRL &kp LALT &SPACE_CLEAR_BT &STICKY_L1 &STICKY_L1
+            >;
+        };
+
+        // 层1：符号/数字层
+        layer1 {
+            bindings = <
+                &kp HASH &kp 1    &kp 2    &kp 3    &TD_LPAREN_LBRC &TD_RPAREN_RBRC &kp MINUS &kp MINUS &kp PLUS  &kp AT
+                &kp STAR &kp 4    &kp 5    &kp 6    &kp SLSH &kp COLN &kp SEMI &kp QUOT &kp DQT   &kp DEL
+                &kp LSHFT&kp 7    &kp 8    &kp 9    &kp QUES &kp EXCL &kp COMM &kp DOT  &TD_MUTE_L3 &kp ENTER
+                &kp LCTRL&kp 0    &SPACE_CLEAR_BT &mo 0 &STICKY_L2
+            >;
+        };
+
+        // 层2：功能/背光层
+        layer2 {
+            bindings = <
+                &trans   &kp UP   &kp EJECT &soft_reset &trans   &trans   &kp LT   &kp GT   &kp PIPE &kp EQUAL
+                &kp LEFT &kp DOWN &kp RIGHT &trans   &kp BSLH &kp AMPS &kp LBRC &kp RBRC &kp CARET &kp RETURN
+                &kp LSHFT&trans   &trans   &trans   &led_dec   &led_tog   &led_inc   &trans   &TD_BOOT_SWAP &kp ENTER
+                &kp LCTRL&kp LALT &SPACE_CLEAR_BT &mo 0 &mo 0
+            >;
+        };
+
+        // 层3：预留扩展层
+        layer3 {
+            bindings = <
+                &trans &trans &trans &trans &trans &trans &trans &trans &trans &trans
+                &trans &trans &trans &trans &trans &trans &trans &trans &trans &trans
+                &trans &trans &trans &trans &trans &trans &trans &trans &trans &trans
+                &trans &trans &trans &trans &trans
+            >;
+        };
+    };
+
+    // 核心行为配置
+    behaviors {
+        // 1. 双击空格清除蓝牙配对
+        SPACE_CLEAR_BT: space-clear-bt {
+            compatible = "zmk,behavior-tap-dance";
+            label = "SPACE CLEAR BT";
+            #binding-cells = <0>;
+            tap-actions = <&tap_one &kp SPACE &tap_two &bt BT_CLR>;
+            tapping-term-ms = <200>;
+        };
+
+        // 2. 弹出U盘宏（长按aA+美元键触发）
+        macro_pop_usb: macro-pop-usb {
+            compatible = "zmk,behavior-macro";
+            label = "POP USB DRIVE";
+            #binding-cells = <0>;
+            macros = <&kp LCTRL &kp LALT &kp EJECT &kp LCTRL &kp LALT &kp NONE>;
+            trigger-key = <&kp DLRS>;
+        };
+
+        // 3. 层0第三行第九键：单击=; 双击=层1
+        TD_SEMI_L1: td-semi-l1 {
+            compatible = "zmk,behavior-tap-dance";
+            label = "SEMICOLON / LAYER1";
+            #binding-cells = <0>;
+            tap-actions = <&tap_one &kp SEMI &tap_two &mo 1>;
+            tapping-term-ms = <200>;
+        };
+
+        // 4. 层1括号/中括号切换
+        TD_LPAREN_LBRC: td-lparen-lbrc {
+            compatible = "zmk,behavior-hold-tap";
+            label = "( / [";
+            #binding-cells = <0>;
+            tapping-term-ms = <250>;
+            bindings = <&kp LPRN &kp LBRC>;
+        };
+        TD_RPAREN_RBRC: td-rparen-rbrc {
+            compatible = "zmk,behavior-hold-tap";
+            label = ") / ]";
+            #binding-cells = <0>;
+            tapping-term-ms = <250>;
+            bindings = <&kp RPRN &kp RBRC>;
+        };
+
+        // 5. 层1静音/层3切换
+        TD_MUTE_L3: td-mute-l3 {
+            compatible = "zmk,behavior-tap-dance";
+            label = "MUTE / LAYER3";
+            #binding-cells = <0>;
+            tap-actions = <&tap_one &kp MUTE &tap_two &sl 3>;
+            tapping-term-ms = <200>;
+        };
+
+        // 6. 层2Bootloader/输出切换
+        TD_BOOT_SWAP: td-boot-swap {
+            compatible = "zmk,behavior-tap-dance";
+            label = "BOOTLOADER / OUTPUT SWAP";
+            #binding-cells = <0>;
+            tap-actions = <&tap_one &reset &tap_two &out_swap>;
+            tapping-term-ms = <200>;
+        };
+
+        // 7. 粘滞Ctrl（单击=粘滞，长按=普通）
+        STICKY_CTRL: sticky-ctrl {
+            compatible = "zmk,behavior-hold-tap";
+            label = "STICKY CTRL";
+            #binding-cells = <0>;
+            tapping-term-ms = <250>;
+            bindings = <&sticky_lctrl &kp LCTRL>;
+        };
+
+        // 8. 粘滞层1/锁定层1
+        STICKY_L1: sticky-l1 {
+            compatible = "zmk,behavior-hold-tap";
+            label = "STICKY LAYER1";
+            #binding-cells = <0>;
+            tapping-term-ms = <250>;
+            bindings = <&sticky_l1 &sl 1>;
+        };
+
+        // 9. 粘滞层2/锁定层2
+        STICKY_L2: sticky-l2 {
+            compatible = "zmk,behavior-hold-tap";
+            label = "STICKY LAYER2";
+            #binding-cells = <0>;
+            tapping-term-ms = <250>;
+            bindings = <&sticky_l2 &sl 2>;
+        };
+
+        // 10. 右下角aA键自定义（短按=ALT，长按=弹出U盘宏）
+        RALT_CUSTOM: ralt-custom {
+            compatible = "zmk,behavior-hold-tap";
+            label = "RIGHT ALT CUSTOM";
+            #binding-cells = <0>;
+            tapping-term-ms = <250>;
+            quick-tap-ms = <100>;
+            bindings = <&kp RALT &macro_pop_usb>;
+        };
+    };
+
+    // 按键映射
+    dt-bindings {
+        zmk {
+            keys {
+                DLRS = <0x04>;
+                EJECT = <0x83>;
+                soft_reset = <&ext_power EP_ON>;
+                out_swap = <&out OUT_BLE>;
+                led_dec = <&led_dec>;
+                led_tog = <&led_tog>;
+                led_inc = <&led_inc>;
+                reset = <&reset>;
+            };
+        };
+    };
+};
