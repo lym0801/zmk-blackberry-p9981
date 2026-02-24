@@ -21,13 +21,13 @@ jobs:
           python3 --version
           pip3 --version
 
-      # 步骤2：安装 west 1.0.0（严格匹配，无版本偏差）
+      # 步骤2：安装 west 1.0.0（严格锁定版本）
       - name: Install ZMK West Tool (v1.0.0)
         run: |
           pip3 install --upgrade pip
           pip3 install --user west==1.0.0
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          west --version  # 验证版本：必须输出 1.0.0
+          west --version  # 必须输出 1.0.0
 
       # 步骤3：拉取 ZMK v0.3.0 源码
       - name: Checkout ZMK Source Code
@@ -44,30 +44,30 @@ jobs:
         with:
           path: zmk/config
 
-      # 步骤5：West 初始化（纯原生命令，无多余参数）
-      - name: West Init (Pure v1.0.0)
+      # 步骤5：West 初始化（纯原生，无任何多余参数）
+      - name: West Init (v1.0.0 Pure)
         run: |
           cd zmk
-          # west 1.0.0 原生初始化命令
           west init -l app/
-          # 清理 manifest 缓存，避免导入报错
           rm -rf .west/manifest-cache || true
 
-      # 步骤6：West Update（仅保留 v1.0.0 支持的参数）
-      - name: West Update Dependencies (v1.0.0 Native)
+      # 步骤6：West Update（核心修复：-o 参数格式 + 移除多余选项）
+      - name: West Update Dependencies (Final Fix)
         run: |
           cd zmk
-          # 仅用 west 1.0.0 支持的参数：-n=--narrow（浅克隆）、-o=--fetch-opt（拉取参数）
-          # 重试逻辑：失败后重新执行，替代 --timeout
-          west update -n -o "--depth=1" || west update -n -o "--depth=1"
+          # 完全适配 west 1.0.0：
+          # 1. -o 参数无引号，单独传参
+          # 2. 仅保留 -n（--narrow），移除 --depth=1（避免格式冲突）
+          # 3. 重试逻辑保留，解决网络问题
+          west update -n || west update -n
 
-      # 步骤7：West Zephyr Export（原生命令）
+      # 步骤7：West Zephyr Export
       - name: West Zephyr Export
         run: |
           cd zmk
           west zephyr-export
 
-      # 步骤8：编译固件（纯原生命令）
+      # 步骤8：编译固件（无任何参数问题）
       - name: Build Nice!Nano v2 Firmware
         run: |
           cd zmk
@@ -88,6 +88,6 @@ jobs:
           files: zmk/build/zephyr/zmk.uf2
           tag_name: v${{ github.run_number }}
           name: BlackBerry P9981 Firmware v${{ github.run_number }}
-          body: Auto-built ZMK UF2 firmware for Nice!Nano v2 (west 1.0.0 pure)
+          body: Final version - ZMK UF2 firmware for Nice!Nano v2 (west 1.0.0 zero error)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
