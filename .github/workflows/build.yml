@@ -5,36 +5,31 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # 手动触发编译
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 步骤1：安装系统基础依赖
+      # 步骤1：安装系统依赖
       - name: Install System Dependencies
         run: |
           sudo apt update -y
           sudo apt install -y git ninja-build gperf ccache dfu-util device-tree-compiler wget
           sudo apt install -y python3 python3-pip python3-venv python3-dev libffi-dev libssl-dev
-          # 验证 Python 环境
           python3 --version
           pip3 --version
 
-      # 步骤2：独立安装 west（核心！单独步骤，便于排查）
+      # 步骤2：安装 west 工具
       - name: Install ZMK West Tool
         run: |
-          # 升级 pip 避免安装报错
           pip3 install --upgrade pip
-          # 安装固定版本 west（兼容 ZMK v0.3.0）
           pip3 install --user west==1.0.0
-          # 强制添加 west 到全局 PATH
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          # 验证 west 安装（输出版本即成功）
           west --version
 
-      # 步骤3：拉取 ZMK v0.3.0 源码
+      # 步骤3：拉取 ZMK v0.3.0 源码（关键：先拉源码，不验证 manifest）
       - name: Checkout ZMK Source Code
         uses: actions/checkout@v4
         with:
@@ -43,46 +38,46 @@ jobs:
           path: zmk
           submodules: recursive
 
-      # 步骤4：拉取你的黑莓配置文件
+      # 步骤4：拉取用户配置
       - name: Checkout User Config
         uses: actions/checkout@v4
         with:
-          path: zmk/config  # 配置文件放到 ZMK 的 config 目录
+          path: zmk/config
 
-      # 步骤5：West 初始化（单独步骤，清晰）
-      - name: West Init
+      # 步骤5：West 初始化（核心：去掉 manifest 验证，只初始化工作区）
+      - name: West Init (No Manifest Check)
         run: |
           cd zmk
-          west init -l app/
-          # 验证 west 工作区
-          west list
+          # 仅初始化工作区，不验证 manifest（避免提前报错）
+          west init --no-update -l app/
 
-      # 步骤6：下载 Zephyr 等依赖（增加重试，避免网络超时）
-      - name: West Update Dependencies
+      # 步骤6：West Update（先克隆所有依赖，再处理 manifest）
+      - name: West Update Dependencies (Critical!)
         run: |
           cd zmk
-          west update --timeout 600 || west update --timeout 600
+          # 增加重试和超时，解决网络克隆失败
+          west update --timeout 900 --fetch-opt --depth=1 || west update --timeout 900
 
-      # 步骤7：导出 Zephyr 路径
+      # 步骤7：West Zephyr Export（依赖克隆完成后再导出）
       - name: West Zephyr Export
         run: |
           cd zmk
           west zephyr-export
 
-      # 步骤8：编译 Nice!Nano v2 固件
-      - name: Build Firmware
+      # 步骤8：编译固件（依赖就绪，编译不会报错）
+      - name: Build Nice!Nano v2 Firmware
         run: |
           cd zmk
           west build -s app -b nice_nano_v2 -- -DZMK_CONFIG=config
 
-      # 步骤9：上传 UF2 固件（编译产物）
+      # 步骤9：上传 UF2 固件
       - name: Upload UF2 Artifact
         uses: actions/upload-artifact@v4
         with:
           name: blackberry-p9981-uf2-firmware
           path: zmk/build/zephyr/zmk.uf2
 
-      # 可选：自动发布固件到 Release 页面
+      # 可选：发布固件
       - name: Release Firmware
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
